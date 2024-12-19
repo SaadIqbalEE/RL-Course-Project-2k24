@@ -12,13 +12,15 @@ class Policy(torch.nn.Module):
 
         self.fc1_a = torch.nn.Linear(state_space, hidden_size)
         self.fc2_a = torch.nn.Linear(hidden_size, hidden_size)
-        self.fc3_a = torch.nn.Linear(hidden_size, action_space)
-
+        self.fc3_a_mean = torch.nn.Linear(hidden_size, action_space)
+        self.fc3_a_logstd = torch.nn.Linear(hidden_size, action_space)
+        
         self.fc1_c = torch.nn.Linear(state_space, hidden_size)
         self.fc2_c = torch.nn.Linear(hidden_size, hidden_size)
         self.fc3_c = torch.nn.Linear(hidden_size, 1)
+        
+        self.log_std = torch.nn.Parameter(torch.ones(action_space))
 
-        self.actor_logstd = torch.nn.Parameter(torch.ones(action_space) * -0.5)
         self.init_weights()
 
     def init_weights(self):
@@ -32,12 +34,10 @@ class Policy(torch.nn.Module):
         x_a = F.relu(x_a)
         x_a = self.fc2_a(x_a)
         x_a = F.relu(x_a)
-        #x_a = self.fc3_a(x_a)
         
-        mean = self.fc3_a(x_a)  # Mean vector μ
+        mean = self.fc3_a_mean(x_a)  # Mean vector μ
         
-        # Convert actor_logstd to std (ensures positivity)
-        std = torch.exp(self.actor_logstd)
+        std = torch.exp( torch.clamp(self.log_std, -2.0, 1.0))  # Ensure positivity of std
         
         # Multivariate Gaussian distribution with diagonal covariance
         action_dist = Independent(Normal(mean, std), 1)
@@ -46,12 +46,7 @@ class Policy(torch.nn.Module):
         x_c = F.relu(x_c)
         x_c = self.fc2_c(x_c)
         x_c = F.relu(x_c)
-        value = self.fc3_c(x_c)  # Value estimat
-        
-        #x_c = self.fc3_c(x_c)
-
-        #action_probs = F.softmax(x_a, dim=-1)
-        #action_dist = Categorical(action_probs)
+        value = self.fc3_c(x_c)  # Value estimate
 
         return action_dist, value
     
@@ -63,4 +58,4 @@ class Policy(torch.nn.Module):
             ratio (float): Ratio used to scale the randomness. Should decrease over time (0 to 1).
         """
         with torch.no_grad():
-            self.actor_logstd.data = torch.clamp(self.actor_logstd.data * ratio, -2.0, 1.0)
+            self.log_std.data = self.log_std.data * ratio

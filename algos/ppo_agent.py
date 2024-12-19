@@ -5,11 +5,13 @@ import torch
 import numpy as np
 import torch.nn.functional as F
 import time
+import random
     
 class PPOAgent(BaseAgent):
     def __init__(self, config=None):
         super(PPOAgent, self).__init__(config)
         self.device = self.cfg.device  # ""cuda" if torch.cuda.is_available() else "cpu"
+        self.set_seed(self.seed)
         self.policy = Policy(self.observation_space_dim, self.action_space_dim)
         self.policy = self.policy.to(self.device)
         self.lr=float(self.cfg.lr)
@@ -28,6 +30,16 @@ class PPOAgent(BaseAgent):
         self.dones = []
         self.action_log_probs = []
         self.silent = self.cfg.silent
+
+    def set_seed(self, seed):
+        """
+        Sets the seed for reproducibility across all relevant modules.
+        """
+        torch.manual_seed(seed)
+        np.random.seed(seed)
+        random.seed(seed)
+        if self.device == "cuda":
+            torch.cuda.manual_seed_all(seed)
 
     def update_policy(self):
        #########ADDED###################
@@ -74,11 +86,7 @@ class PPOAgent(BaseAgent):
         # Log probability for training purposes
         if log_prob is not None:
             log_prob = log_prob.sum(dim=-1)  # Sum log probs for multivariate Gaussian
-        #aprob = action_dist.log_prob(action)
-        #action = action.item()
-        #return action, aprob
-        #aprob = action_dist.log_prob(action)
-        #action = action.cpu().numpy()  # Convert to numpy for the environment
+
         return action, log_prob
 
     def compute_returns(self):
@@ -190,7 +198,7 @@ class PPOAgent(BaseAgent):
             train_info.update({'total_step': total_step})
             run_episode_reward.append(train_info['ep_reward'])
             
-            logstd = self.policy.actor_logstd
+            logstd = self.policy.log_std
             
             if total_step%self.cfg.log_interval==0:
                 average_return=sum(run_episode_reward)/len(run_episode_reward)
@@ -223,8 +231,6 @@ class PPOAgent(BaseAgent):
         self.rewards.append(torch.Tensor([reward]).float())
         self.dones.append(torch.Tensor([done]))
         self.next_states.append(torch.from_numpy(next_state).float())
-        
-        
         
     def load_model(self):
         filepath=str(self.model_dir)+'/model_parameters_'+str(self.seed)+'.pt'
